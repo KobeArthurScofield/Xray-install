@@ -24,7 +24,7 @@ JSON_PATH=${JSON_PATH:-/usr/local/etc/xray}
 # export JSONS_PATH='/usr/local/etc/xray'
 
 # Set this variable only if you want this script to check all the systemd unit file:
-# export check_all_service_files='yes'
+export check_all_service_files='yes'
 
 # Gobal verbals
 
@@ -43,9 +43,6 @@ RELEASE_LATEST=''
 # Xray latest prerelease/release version
 PRE_RELEASE_LATEST=''
 
-# Xray version will be installed
-INSTALL_VERSION=''
-
 # install
 INSTALL='0'
 
@@ -60,12 +57,6 @@ HELP='0'
 
 # check
 CHECK='0'
-
-# --force
-FORCE='0'
-
-# --beta
-BETA='0'
 
 # --install-user ?
 INSTALL_USER=''
@@ -82,12 +73,6 @@ LOGROTATE='0'
 # --no-update-service
 N_UP_SERVICE='0'
 
-# --reinstall
-REINSTALL='0'
-
-# --version ?
-SPECIFIED_VERSION=''
-
 # --local ?
 LOCAL_FILE=''
 
@@ -96,6 +81,9 @@ PROXY=''
 
 # --purge
 PURGE='0'
+
+# --no-restart
+NO_RESTART='0'
 
 curl() {
   $(type -P curl) -L -q --retry 5 --retry-delay 10 --retry-max-time 60 "$@"
@@ -253,21 +241,6 @@ judgment_parameters() {
       '--purge')
         PURGE='1'
         ;;
-      '--version')
-        if [[ -z "$2" ]]; then
-          echo "error: Please specify the correct version."
-          exit 1
-        fi
-        temp_version='1'
-        SPECIFIED_VERSION="$2"
-        shift
-        ;;
-      '-f' | '--force')
-        FORCE='1'
-        ;;
-      '--beta')
-        BETA='1'
-        ;;
       '-l' | '--local')
         local_install='1'
         if [[ -z "$2" ]]; then
@@ -293,9 +266,6 @@ judgment_parameters() {
         INSTALL_USER="$2"
         shift
         ;;
-      '--reinstall')
-        REINSTALL='1'
-        ;;
       '--no-update-service')
         N_UP_SERVICE='1'
         ;;
@@ -307,6 +277,9 @@ judgment_parameters() {
         LOGROTATE='1'
         LOGROTATE_TIME="$2"
         shift
+        ;;
+      '--no-restart')
+        NO_RESTART='1'
         ;;
       *)
         echo "$0: unknown option -- -"
@@ -321,8 +294,8 @@ judgment_parameters() {
     echo 'You can only choose one action.'
     exit 1
   fi
-  if [[ "$INSTALL" -eq '1' ]] && ((temp_version+local_install+REINSTALL+BETA>1)); then
-    echo "--version,--reinstall,--beta and --local can't be used together."
+  if [[ "$INSTALL" -eq '1' ]] && ((local_install<1)); then
+    echo "You must specify local installation."
     exit 1
   fi
 }
@@ -383,7 +356,6 @@ get_latest_version() {
       echo "error: github API rate limit exceeded"
     else
       echo "error: Failed to get the latest release version."
-      echo "Welcome bug report:https://github.com/XTLS/Xray-install/issues"
     fi
     "rm" "$tmp_file"
     exit 1
@@ -402,7 +374,6 @@ get_latest_version() {
       echo "error: github API rate limit exceeded"
     else
       echo "error: Failed to get the latest release version."
-      echo "Welcome bug report:https://github.com/XTLS/Xray-install/issues"
     fi
     "rm" "$tmp_file"
     exit 1
@@ -419,36 +390,6 @@ get_latest_version() {
 
 version_gt() {
   test "$(echo -e "$1\\n$2" | sort -V | head -n 1)" != "$1"
-}
-
-download_xray() {
-  DOWNLOAD_LINK="https://github.com/XTLS/Xray-core/releases/download/${INSTALL_VERSION}/Xray-linux-${MACHINE}.zip"
-  echo "Downloading Xray archive: $DOWNLOAD_LINK"
-  if curl -f -x "${PROXY}" -R -H 'Cache-Control: no-cache' -o "$ZIP_FILE" "$DOWNLOAD_LINK"; then
-    echo "ok."
-  else
-    echo 'error: Download failed! Please check your network or try again.'
-    return 1
-  fi
-  echo "Downloading verification file for Xray archive: ${DOWNLOAD_LINK}.dgst"
-  if curl -f -x "${PROXY}" -sSR -H 'Cache-Control: no-cache' -o "${ZIP_FILE}.dgst" "${DOWNLOAD_LINK}.dgst"; then
-    echo "ok."
-  else
-    echo 'error: Download failed! Please check your network or try again.'
-    return 1
-  fi
-  if grep 'Not Found' "${ZIP_FILE}.dgst"; then
-    echo 'error: This version does not support verification. Please replace with another version.'
-    return 1
-  fi
-
-  # Verification of Xray archive
-  CHECKSUM=$(awk -F '= ' '/256=/ {print $2}' "${ZIP_FILE}.dgst")
-  LOCALSUM=$(sha256sum "$ZIP_FILE" | awk '{printf $1}')
-  if [[ "$CHECKSUM" != "$LOCALSUM" ]]; then
-    echo 'error: SHA256 check failed! Please check your network or try again.'
-    return 1
-  fi
 }
 
 decompression() {
@@ -684,16 +625,15 @@ install_geodata() {
       exit 1
     fi
   }
-  local download_link_geoip="https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"
-  local download_link_geosite="https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
+  local download_link_geoip="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+  local download_link_geosite="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
   local file_ip='geoip.dat'
-  local file_dlc='dlc.dat'
   local file_site='geosite.dat'
   local dir_tmp
   dir_tmp="$(mktemp -d)"
   [[ "$XRAY_IS_INSTALLED_BEFORE_RUNNING_SCRIPT" -eq '0' ]] && echo "warning: Xray was not installed"
   download_geodata $download_link_geoip $file_ip
-  download_geodata $download_link_geosite $file_dlc
+  download_geodata $download_link_geosite $file_site
   cd "${dir_tmp}" || exit
   for i in "${dir_tmp}"/*.sha256sum; do
     if ! sha256sum -c "${i}"; then
@@ -703,7 +643,7 @@ install_geodata() {
   done
   cd - > /dev/null || exit 1
   install -d "$DAT_PATH"
-  install -m 644 "${dir_tmp}"/${file_dlc} "${DAT_PATH}"/${file_site}
+  install -m 644 "${dir_tmp}"/${file_site} "${DAT_PATH}"/${file_site}
   install -m 644 "${dir_tmp}"/${file_ip} "${DAT_PATH}"/${file_ip}
   rm -r "${dir_tmp}"
   exit 0
@@ -789,20 +729,16 @@ show_help() {
   echo
   echo 'OPTION:'
   echo '  install:'
-  echo '    --version                 Install the specified version of Xray, e.g., --version v1.0.0'
-  echo '    -f, --force               Force install even though the versions are same'
-  echo '    --beta                    Install the pre-release version if it is exist'
   echo '    -l, --local               Install Xray from a local file'
-  echo '    -p, --proxy               Download through a proxy server, e.g., -p http://127.0.0.1:8118 or -p socks5://127.0.0.1:1080'
   echo '    -u, --install-user        Install Xray in specified user, e.g, -u root'
-  echo '    --reinstall               Reinstall current Xray version'
+  echo "    --no-restart              Don't restart Xray after install"
   echo "    --no-update-service       Don't change service files if they are exist"
   echo "    --without-geodata         Don't install/update geoip.dat and geosite.dat"
   echo "    --without-logfiles        Don't install /var/log/xray"
   echo "    --logrotate [time]        Install with logrotate."
   echo "                              [time] need be in the format of 12:34:56, under 12:00:00 should be start with 0, e.g. 01:23:45."
   echo '  install-geodata:'
-  echo '    -p, --proxy               Download through a proxy server'
+  echo '    -p, --proxy               Download through a proxy server, e.g., -p http://127.0.0.1:8118 or -p socks5://127.0.0.1:1080'
   echo '  remove:'
   echo '    --purge                   Remove all the Xray files, include logs, configs, etc'
   echo '  check:'
@@ -835,61 +771,25 @@ main() {
 
   # Two very important variables
   TMP_DIRECTORY="$(mktemp -d)"
-  ZIP_FILE="${TMP_DIRECTORY}/Xray-linux-$MACHINE.zip"
 
   # Install Xray from a local file, but still need to make sure the network is available
   if [[ -n "$LOCAL_FILE" ]]; then
     echo 'warn: Install Xray from a local file, but still need to make sure the network is available.'
-    echo -n 'warn: Please make sure the file is valid because we cannot confirm it. (Press any key) ...'
-    read -r
+    echo -n 'warn: Please make sure the file is valid because we cannot confirm it.'
     install_software 'unzip' 'unzip'
     decompression "$LOCAL_FILE"
   else
-    get_current_version
-    if [[ "$REINSTALL" -eq '1' ]]; then
-      if [[ -z "$CURRENT_VERSION" ]]; then
-        echo "error: Xray is not installed"
-        exit 1
-      fi
-      INSTALL_VERSION="$CURRENT_VERSION"
-      echo "info: Reinstalling Xray $CURRENT_VERSION"
-    elif [[ -n "$SPECIFIED_VERSION" ]]; then
-      SPECIFIED_VERSION="v${SPECIFIED_VERSION#v}"
-      if [[ "$CURRENT_VERSION" == "$SPECIFIED_VERSION" ]] && [[ "$FORCE" -eq '0' ]]; then
-        echo "info: The current version is same as the specified version. The version is $CURRENT_VERSION ."
-        exit 0
-      fi
-      INSTALL_VERSION="$SPECIFIED_VERSION"
-      echo "info: Installing specified Xray version $INSTALL_VERSION for $(uname -m)"
-    else
-      install_software 'curl' 'curl'
-      get_latest_version
-      if [[ "$BETA" -eq '0' ]]; then
-        INSTALL_VERSION="$RELEASE_LATEST"
-      else
-        INSTALL_VERSION="$PRE_RELEASE_LATEST"
-      fi
-      if ! version_gt "$INSTALL_VERSION" "$CURRENT_VERSION" && [[ "$FORCE" -eq '0' ]]; then
-        echo "info: No new version. The current version of Xray is $CURRENT_VERSION ."
-        exit 0
-      fi
-      echo "info: Installing Xray $INSTALL_VERSION for $(uname -m)"
-    fi
-    install_software 'curl' 'curl'
-    install_software 'unzip' 'unzip'
-    if ! download_xray; then
-      "rm" -r "$TMP_DIRECTORY"
-      echo "removed: $TMP_DIRECTORY"
-      exit 1
-    fi
-    decompression "$ZIP_FILE"
+    echo 'No install file. Exit.'
+    exit 1
   fi
 
   # Determine if Xray is running
-  if systemctl list-unit-files | grep -qw 'xray'; then
-    if [[ -n "$(pidof xray)" ]]; then
-      stop_xray
-      XRAY_RUNNING='1'
+  if [[ "$NO_RESTART" -eq '0' ]]; then
+    if systemctl list-unit-files | grep -qw 'xray'; then
+      if [[ -n "$(pidof xray)" ]]; then
+        stop_xray
+        XRAY_RUNNING='1'
+      fi
     fi
   fi
   install_xray
@@ -945,16 +845,18 @@ main() {
   get_current_version
   echo "info: Xray $CURRENT_VERSION is installed."
   echo "You may need to execute a command to remove dependent software: $PACKAGE_MANAGEMENT_REMOVE curl unzip"
-  if [[ "$XRAY_IS_INSTALLED_BEFORE_RUNNING_SCRIPT" -eq '1' ]] && [[ "$FORCE" -eq '0' ]] && [[ "$REINSTALL" -eq '0' ]]; then
-    [[ "$XRAY_RUNNING" -eq '1' ]] && start_xray
-  else
-    systemctl start xray
-    systemctl enable xray
-    sleep 1s
-    if systemctl -q is-active xray; then
-      echo "info: Enable and start the Xray service"
+  if [[ "$NO_RESTART" -eq '0' ]]; then
+    if [[ "$XRAY_IS_INSTALLED_BEFORE_RUNNING_SCRIPT" -eq '1' ]]; then
+      [[ "$XRAY_RUNNING" -eq '1' ]] && start_xray
     else
-      echo "warning: Failed to enable and start the Xray service"
+      systemctl start xray
+      systemctl enable xray
+      sleep 1s
+      if systemctl -q is-active xray; then
+        echo "info: Enable and start the Xray service"
+      else
+        echo "warning: Failed to enable and start the Xray service"
+      fi
     fi
   fi
 }
