@@ -270,8 +270,8 @@ judgment_parameters() {
         N_UP_SERVICE='1'
         ;;
       '--logrotate')
-        if grep -qE '\b([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\b' <<< "$2";then
-          echo "error: Wrong format of time, it should be in the format of 12:34:56, under 12:00:00 should be start with 0, e.g. 01:23:45."
+        if ! grep -qE '\b([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\b' <<< "$2";then
+          echo "error: Wrong format of time, it should be in the format of 12:34:56, under 10:00:00 should be start with 0, e.g. 01:23:45."
           exit 1
         fi
         LOGROTATE='1'
@@ -736,7 +736,7 @@ show_help() {
   echo "    --without-geodata         Don't install/update geoip.dat and geosite.dat"
   echo "    --without-logfiles        Don't install /var/log/xray"
   echo "    --logrotate [time]        Install with logrotate."
-  echo "                              [time] need be in the format of 12:34:56, under 12:00:00 should be start with 0, e.g. 01:23:45."
+  echo "                              [time] need be in the format of 12:34:56, under 10:00:00 should be start with 0, e.g. 01:23:45."
   echo '  install-geodata:'
   echo '    -p, --proxy               Download through a proxy server, e.g., -p http://127.0.0.1:8118 or -p socks5://127.0.0.1:1080'
   echo '  remove:'
