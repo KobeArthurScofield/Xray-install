@@ -976,6 +976,8 @@ main() {
         echo "warning: Failed to enable and start the Xray service"
       fi
     fi
+  else
+    echo "Please restart the service manually soon."
   fi
 }
 
