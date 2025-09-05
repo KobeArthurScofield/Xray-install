@@ -97,6 +97,9 @@ PROXY=''
 # --purge
 PURGE='0'
 
+# --no-restart
+NO_RESTART='0'
+
 curl() {
   $(type -P curl) -L -q --retry 5 --retry-delay 10 --retry-max-time 60 "$@"
 }
@@ -308,6 +311,9 @@ judgment_parameters() {
       LOGROTATE='1'
       LOGROTATE_TIME="$2"
       shift
+      ;;
+    '--no-restart')
+      NO_RESTART='1'
       ;;
     *)
       echo "$0: unknown option -- -"
@@ -807,6 +813,7 @@ show_help() {
   echo '    -p, --proxy               Download through a proxy server, e.g., -p http://127.0.0.1:8118 or -p socks5://127.0.0.1:1080'
   echo '    -u, --install-user        Install Xray in specified user, e.g, -u root'
   echo '    --reinstall               Reinstall current Xray version'
+  echo "    --no-restart              Don't restart Xray after install"
   echo "    --no-update-service       Don't change service files if they are exist"
   echo "    --without-geodata         Don't install/update geoip.dat and geosite.dat"
   echo "    --without-logfiles        Don't install /var/log/xray"
@@ -851,8 +858,7 @@ main() {
   # Install Xray from a local file, but still need to make sure the network is available
   if [[ -n "$LOCAL_FILE" ]]; then
     echo 'warn: Install Xray from a local file, but still need to make sure the network is available.'
-    echo -n 'warn: Please make sure the file is valid because we cannot confirm it. (Press any key) ...'
-    read -r
+    echo 'warn: Please make sure the file is valid because we cannot confirm it.'
     install_software 'unzip' 'unzip'
     decompression "$LOCAL_FILE"
   else
@@ -897,10 +903,12 @@ main() {
   fi
 
   # Determine if Xray is running
-  if systemctl list-unit-files | grep -qw 'xray'; then
-    if [[ -n "$(pidof xray)" ]]; then
-      stop_xray
-      XRAY_RUNNING='1'
+  if [[ "$NO_RESTART" -eq '0' ]]; then
+    if systemctl list-unit-files | grep -qw 'xray'; then
+      if [[ -n "$(pidof xray)" ]]; then
+        stop_xray
+        XRAY_RUNNING='1'
+      fi
     fi
   fi
   install_xray
@@ -956,17 +964,21 @@ main() {
   get_current_version
   echo "info: Xray $CURRENT_VERSION is installed."
   echo "You may need to execute a command to remove dependent software: $PACKAGE_MANAGEMENT_REMOVE curl unzip"
-  if [[ "$XRAY_IS_INSTALLED_BEFORE_RUNNING_SCRIPT" -eq '1' ]] && [[ "$FORCE" -eq '0' ]] && [[ "$REINSTALL" -eq '0' ]]; then
-    [[ "$XRAY_RUNNING" -eq '1' ]] && start_xray
-  else
-    systemctl start xray
-    systemctl enable xray
-    sleep 1s
-    if systemctl -q is-active xray; then
-      echo "info: Enable and start the Xray service"
+  if [[ "$NO_RESTART" -eq '0' ]]; then
+    if [[ "$XRAY_IS_INSTALLED_BEFORE_RUNNING_SCRIPT" -eq '1' ]] && [[ "$FORCE" -eq '0' ]] && [[ "$REINSTALL" -eq '0' ]]; then
+      [[ "$XRAY_RUNNING" -eq '1' ]] && start_xray
     else
-      echo "warning: Failed to enable and start the Xray service"
+      systemctl start xray
+      systemctl enable xray
+      sleep 1s
+      if systemctl -q is-active xray; then
+        echo "info: Enable and start the Xray service"
+      else
+        echo "warning: Failed to enable and start the Xray service"
+      fi
     fi
+  else
+    echo "Please restart the service manually soon."
   fi
 }
 
